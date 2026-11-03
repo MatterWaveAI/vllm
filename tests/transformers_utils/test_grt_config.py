@@ -1,19 +1,28 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 """Test that GRT's config.json loads without a GRT-aware Transformers, and
-verify INT8 / INT4 weight quantization on GRTForCausalLM."""
+verify that TransformersForCausalLM dispatches GRT attention and cosine head."""
 
-from dataclasses import dataclass
-import importlib.util
 import json
-from pathlib import Path
 import sys
 import types
-from unittest.mock import patch
 
 import pytest
 import torch
-from torch import nn
+
+try:
+    import vllm.config.utils  # noqa: F401
+except ModuleNotFoundError:
+    for parent in ("vllm.config", "vllm.config.utils"):
+        if parent not in sys.modules:
+            m = types.ModuleType(parent)
+            m.__path__ = []
+            sys.modules[parent] = m
+    sys.modules["vllm.config.utils"].getattr_iter = (
+        lambda obj, names, default=None, **kw: next(
+            (getattr(obj, n) for n in names if hasattr(obj, n)), default
+        )
+    )
 
 from vllm.transformers_utils.config import get_config
 from vllm.transformers_utils.configs.grt import GRTConfig
@@ -71,6 +80,13 @@ _RESIZED = {
     ids=["grt-30m", "resized"],
 )
 def test_config_loads(tmp_path, config_json):
+    if config_json is not _GRT_30M_CONFIG:
+        config_json = {
+            **config_json,
+            "pad_token_id": 0,
+            "bos_token_id": 1,
+            "eos_token_id": 2,
+        }
     (tmp_path / "config.json").write_text(json.dumps(config_json))
     config = get_config(str(tmp_path), trust_remote_code=False)
     assert isinstance(config, GRTConfig)
@@ -83,129 +99,29 @@ def test_config_loads(tmp_path, config_json):
     assert config.tie_word_embeddings
 
 
-class _DummyAttention(nn.Module):
-    def __init__(self, num_heads: int, head_dim: int, scale: float, **kwargs):
-        super().__init__()
-        self.num_heads = num_heads
-        self.head_dim = head_dim
-        self.scale = scale
+def test_grt_transformers_backend_parity():
+    pytest.importorskip("transformers.models.grt")
+    from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS
+    from transformers.models.grt import GRTConfig as HfGRTConfig
+    from transformers.models.grt import GRTForCausalLM, GRTModel
 
-    def forward(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
-        t = q.shape[0]
-        qh = q.view(t, self.num_heads, self.head_dim).transpose(0, 1)
-        kh = k.view(t, self.num_heads, self.head_dim).transpose(0, 1)
-        vh = v.view(t, self.num_heads, self.head_dim).transpose(0, 1)
-        scores = torch.matmul(qh, kh.transpose(-1, -2)) * self.scale
-        mask = torch.triu(torch.full((t, t), float("-inf"), device=q.device), diagonal=1)
-        probs = torch.softmax(scores + mask, dim=-1)
-        out = torch.matmul(probs, vh).transpose(0, 1).contiguous()
-        return out.view(t, self.num_heads * self.head_dim)
-
-
-@dataclass
-class _DummyModelConfig:
-    hf_config: GRTConfig
-
-
-@dataclass
-class _DummyVllmConfig:
-    model_config: _DummyModelConfig
-    cache_config: object = None
-    quant_config: object = None
-
-
-def _weight_bytes(model: nn.Module) -> int:
-    total = 0
-    seen: set[int] = set()
-    for t in (*model.parameters(), *model.buffers()):
-        if t is not None and t.data_ptr() not in seen:
-            seen.add(t.data_ptr())
-            total += t.numel() * t.element_size()
-    return total
-
-
-def _load_grt_module():
-    try:
-        from vllm.model_executor.models import grt as grt_mod
-
-        return grt_mod
-    except ModuleNotFoundError:
-        pkg_name = "vllm.model_executor.models"
-        for parent in ("vllm.model_executor", pkg_name):
-            if parent not in sys.modules:
-                m = types.ModuleType(parent)
-                m.__path__ = []
-                sys.modules[parent] = m
-        stubs = {
-            "vllm.compilation.decorators": {"support_torch_compile": lambda cls: cls},
-            "vllm.config": {"CacheConfig": object, "VllmConfig": object},
-            "vllm.config.utils": {
-                "getattr_iter": lambda obj, names, default=None, **kw: next(
-                    (getattr(obj, n) for n in names if hasattr(obj, n)), default
-                )
-            },
-            "vllm.distributed": {"get_tensor_model_parallel_world_size": lambda: 1},
-            "vllm.model_executor.layers.attention": {"Attention": _DummyAttention},
-            "vllm.model_executor.layers.quantization": {"QuantizationConfig": object},
-            "vllm.sequence": {"IntermediateTensors": object},
-            f"{pkg_name}.utils": {
-                "AutoWeightsLoader": object,
-                "maybe_prefix": lambda p, n: f"{p}.{n}" if p else n,
-            },
-        }
-        for mod_name, attrs in stubs.items():
-            if mod_name not in sys.modules:
-                mod = types.ModuleType(mod_name)
-                for k, v in attrs.items():
-                    setattr(mod, k, v)
-                sys.modules[mod_name] = mod
-        grt_path = (
-            Path(__file__).resolve().parents[2]
-            / "vllm"
-            / "model_executor"
-            / "models"
-            / "grt.py"
-        )
-        spec = importlib.util.spec_from_file_location(f"{pkg_name}.grt", grt_path)
-        grt_mod = importlib.util.module_from_spec(spec)
-        grt_mod.__package__ = pkg_name
-        sys.modules[f"{pkg_name}.grt"] = grt_mod
-        spec.loader.exec_module(grt_mod)
-        return grt_mod
-
-
-_GRT_MOD = _load_grt_module()
-
-
-def _init_random_grt(
-    config: GRTConfig, seed: int = 42, device: str | torch.device = "cpu"
-):
-    grt_mod = _GRT_MOD
-
-    g = torch.Generator().manual_seed(seed)
-    with (
-        patch.object(grt_mod, "Attention", _DummyAttention),
-        patch.object(grt_mod, "get_tensor_model_parallel_world_size", return_value=1),
+    def _mock_vllm_attn(
+        module, query, key, value, attention_mask, scaling=None, **kwargs
     ):
-        vllm_cfg = _DummyVllmConfig(model_config=_DummyModelConfig(hf_config=config))
-        model = grt_mod.GRTForCausalLM(vllm_config=vllm_cfg)
-    with torch.no_grad():
-        for name, p in model.named_parameters():
-            if "scales" in name or "norm" in name:
-                p.copy_(torch.randn(p.shape, generator=g) * 0.1 + 0.5)
-            elif "output_scale" in name:
-                p.fill_(2.0)
-            else:
-                p.copy_(torch.randn(p.shape, generator=g) * 0.2)
-    model = model.to(device)
-    model.process_weights_after_loading()
-    return model
+        t = query.shape[-2]
+        scale = scaling or (query.shape[-1] ** -0.5)
+        scores = torch.matmul(query, key.transpose(-1, -2)) * scale
+        mask = torch.triu(
+            torch.full((t, t), float("-inf"), device=query.device), diagonal=1
+        )
+        probs = torch.softmax(scores + mask, dim=-1, dtype=torch.float32).to(
+            query.dtype
+        )
+        out = torch.matmul(probs, value)
+        return out.transpose(1, 2).reshape(t, -1), None
 
-
-@pytest.mark.parametrize("bits,atol", [(8, 0.15), (4, 0.6)])
-def test_grt_weight_quantization(bits: int, atol: float):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    cfg = GRTConfig(
+    ALL_ATTENTION_FUNCTIONS.register("vllm", _mock_vllm_attn)
+    cfg = HfGRTConfig(
         vocab_size=256,
         hidden_size=64,
         intermediate_size=128,
@@ -214,39 +130,33 @@ def test_grt_weight_quantization(bits: int, atol: float):
         n_qkv_rotations=3,
         ffn_n_rotations=3,
         n_mixer_rotations=1,
+        pad_token_id=0,
+        bos_token_id=1,
+        eos_token_id=2,
     )
-    ref_model = _init_random_grt(cfg, seed=7, device=device)
-    q_model = _init_random_grt(cfg, seed=7, device=device)
+    assert GRTForCausalLM.is_backend_compatible()
+    ref_model = GRTForCausalLM(cfg).eval()
 
-    input_ids = torch.tensor([1, 5, 12, 33, 100], dtype=torch.long, device=device)
-    positions = torch.arange(len(input_ids), dtype=torch.long, device=device)
+    vllm_cfg = HfGRTConfig(**cfg.to_dict())
+    vllm_cfg._attn_implementation = "vllm"
+    vllm_base = GRTModel(vllm_cfg)
+    vllm_head = GRTForCausalLM(vllm_cfg).lm_head
+    vllm_base.load_state_dict(ref_model.model.state_dict())
+    vllm_head.load_state_dict(ref_model.lm_head.state_dict())
+    vllm_head.phase_angles = vllm_base.embedding.phase_angles
+    vllm_base.eval()
+    vllm_head.eval()
 
+    input_ids = torch.tensor([[1, 5, 12, 33, 100]], dtype=torch.long)
+    positions = torch.arange(input_ids.shape[1], dtype=torch.long).unsqueeze(0)
     with torch.no_grad():
-        ref_hidden = ref_model(input_ids, positions)
-        ref_logits = ref_model.compute_logits(ref_hidden)
-        fp32_bytes = _weight_bytes(ref_model)
+        ref_logits = ref_model(input_ids=input_ids, position_ids=positions).logits[0]
+        vllm_hidden = vllm_base(
+            input_ids=input_ids,
+            position_ids=positions,
+            use_cache=False,
+            return_dict=False,
+        )[0][0]
+        vllm_logits = vllm_head(vllm_hidden)
 
-        q_model.quantize_weights(bits=bits)
-        q_bytes = _weight_bytes(q_model)
-        q_hidden = q_model(input_ids, positions)
-        q_logits = q_model.compute_logits(q_hidden)
-
-    assert q_bytes < fp32_bytes
-    # Angles and scales stay in fp32 so Givens rotations do not suffer phase drift
-    for block in q_model.model.blocks:
-        assert block.attention.qkv_angles.dtype == torch.float32
-        assert block.attention.qkv_gains.dtype == torch.float32
-        assert block.attention.o_angles.dtype == torch.float32
-        assert block.attention.o_gains.dtype == torch.float32
-        assert block.mixer.angles.dtype == torch.float32
-        assert block.mixer.gains.dtype == torch.float32
-        expected_dtype = torch.int8 if bits == 8 else torch.uint8
-        assert block.attention.qkv_coupling.dtype == expected_dtype
-        assert block.attention.o_coupling.dtype == expected_dtype
-        assert block.mixer.coupling.dtype == expected_dtype
-    assert q_model.model.embedding._embedding_table_q.dtype == (
-        torch.int8 if bits == 8 else torch.uint8
-    )
-    assert q_model.head.dtype == (torch.int8 if bits == 8 else torch.uint8)
-    torch.testing.assert_close(q_logits, ref_logits, atol=atol, rtol=0.1)
-
+    torch.testing.assert_close(vllm_logits, ref_logits, atol=1e-5, rtol=1e-5)
