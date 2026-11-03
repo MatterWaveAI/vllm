@@ -328,7 +328,8 @@ _TEXT_GENERATION_EXAMPLE_MODELS = {
     "GraniteMoeSWAForCausalLM": _HfExamplesInfo("ibm-granite/granite-swash-3b-a600m"),
     "GraniteSWAForCausalLM": _HfExamplesInfo("ibm-granite/granite-swash-2b"),
     "GRTForCausalLM": _HfExamplesInfo(
-        "matterwaveai/grt-30m", is_available_online=False
+        "MatterWaveAI/grt-30m",
+        extras={"chat": "MatterWaveAI/grt-30m-chat"},
     ),
     "HrmTextForCausalLM": _HfExamplesInfo(
         "sapientinc/HRM-Text-1B",
@@ -762,6 +763,9 @@ _SEQUENCE_CLASSIFICATION_EXAMPLE_MODELS = {
     "GPT2ForSequenceClassification": _HfExamplesInfo(
         "nie3e/sentiment-polish-gpt2-small"
     ),
+    "GRTForSequenceClassification": _HfExamplesInfo(
+        "MatterWaveAI/grt-30m-reranker",
+    ),
     "GteNewForSequenceClassification": _HfExamplesInfo(
         "Alibaba-NLP/gte-multilingual-reranker-base",
         trust_remote_code=True,
@@ -939,6 +943,9 @@ _MULTIMODAL_EXAMPLE_MODELS = {
     ),
     "GraniteSpeechPlusForConditionalGeneration": _HfExamplesInfo(
         "ibm-granite/granite-speech-4.1-2b-plus",
+    ),
+    "GRTVLForConditionalGeneration": _HfExamplesInfo(
+        "MatterWaveAI/grt-30m-vl",
     ),
     "GLM4VForCausalLM": _HfExamplesInfo(
         "zai-org/glm-4v-9b",

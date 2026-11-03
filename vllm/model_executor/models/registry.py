@@ -770,6 +770,10 @@ _TRANSFORMERS_SUPPORTED_MODELS = {
         "transformers",
         "TransformersMultiModalForCausalLM",
     ),
+    "GRTVLForConditionalGeneration": (
+        "transformers",
+        "TransformersMultiModalForCausalLM",
+    ),
     "HunYuanVLForConditionalGeneration": (
         "transformers",
         "TransformersMultiModalForCausalLM",
@@ -777,6 +781,11 @@ _TRANSFORMERS_SUPPORTED_MODELS = {
     "VibeVoiceAsrForConditionalGeneration": (
         "transformers",
         "TransformersMultiModalForCausalLM",
+    ),
+    # Sequence classification models
+    "GRTForSequenceClassification": (
+        "transformers",
+        "TransformersForSequenceClassification",
     ),
 }
 
