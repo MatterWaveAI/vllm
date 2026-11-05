@@ -106,11 +106,19 @@ class CausalMixin(VllmModelForTextGeneration, Base):
     def load_weights(self, weights: Iterable[tuple[str, "torch.Tensor"]]) -> set[str]:
         """A thin wrapper around `Base.load_weights` to handle the lm_head bias."""
         lm_head_bias = set()
+        lora_a_tensors: dict[str, torch.Tensor] = {}
+        lora_b_tensors: dict[str, torch.Tensor] = {}
         load_device = self.vllm_config.load_config.device or self.device_config.device
 
         def auto_load_lm_head_bias(weights):
             for name, weight in weights:
-                if (
+                if name.endswith(".lora_A"):
+                    lora_a_tensors[name.removesuffix(".lora_A")] = weight
+                    lm_head_bias.add(name)
+                elif name.endswith(".lora_B"):
+                    lora_b_tensors[name.removesuffix(".lora_B")] = weight
+                    lm_head_bias.add(name)
+                elif (
                     name.endswith("lm_head.bias")
                     and self.pp_group.is_last_rank
                     and isinstance(self.lm_head, ParallelLMHead)
@@ -124,7 +132,84 @@ class CausalMixin(VllmModelForTextGeneration, Base):
                 else:
                     yield name, weight
 
-        return super().load_weights(auto_load_lm_head_bias(weights)) | lm_head_bias
+        loaded = super().load_weights(auto_load_lm_head_bias(weights)) | lm_head_bias
+        if lora_a_tensors and lora_b_tensors:
+            lora_alpha = float(getattr(self.text_config, "lora_alpha", 16.0))
+            self._apply_grt_lora_pairs(lora_a_tensors, lora_b_tensors, lora_alpha=lora_alpha)
+        return loaded
+
+    @torch.no_grad()
+    def _apply_grt_lora_pairs(
+        self,
+        lora_a_tensors: dict[str, "torch.Tensor"],
+        lora_b_tensors: dict[str, "torch.Tensor"],
+        lora_alpha: float = 16.0,
+    ) -> None:
+        """Fold toroidal `GRTRotationalLoRA` phase-shift deltas into loaded GRT angle parameters."""
+        named_params = dict(self.named_parameters())
+        for base_key, a_weight in lora_a_tensors.items():
+            if base_key not in lora_b_tensors or base_key not in named_params:
+                continue
+            b_weight = lora_b_tensors[base_key]
+            target = named_params[base_key]
+            r = max(1, int(a_weight.shape[-1]))
+            scaling = float(lora_alpha) / float(r)
+            delta = (a_weight.to(device=target.device, dtype=torch.float32) @ b_weight.to(device=target.device, dtype=torch.float32)) * scaling
+            if target.ndim == 3 and delta.ndim == 2:
+                if delta.shape[0] == target.shape[0] and delta.shape[1] == target.shape[2]:
+                    delta = delta.unsqueeze(1).expand(target.shape)
+                else:
+                    delta = delta.reshape(target.shape)
+            elif tuple(delta.shape) != tuple(target.shape):
+                delta = delta.reshape(target.shape)
+            merged = torch.remainder(target.data.float() + delta, 2.0 * torch.pi)
+            target.data.copy_(merged.to(dtype=target.dtype))
+
+    @torch.no_grad()
+    def load_grt_lora_adapter(
+        self,
+        adapter_dir: "str | dict[str, torch.Tensor]",
+        lora_alpha: float = 16.0,
+    ) -> None:
+        """Load and fold a `GRTRotationalLoRA` adapter directory (`grt_lora_adapter.safetensors`) or state dict into this model."""
+        import json
+        import os
+
+        if isinstance(adapter_dir, dict):
+            sd = dict(adapter_dir)
+        elif os.path.isdir(adapter_dir):
+            cfg_path = os.path.join(adapter_dir, "grt_lora_config.json")
+            if os.path.isfile(cfg_path):
+                with open(cfg_path, encoding="utf-8") as f:
+                    lora_alpha = float(json.load(f).get("lora_alpha", lora_alpha))
+            weights_path = os.path.join(adapter_dir, "grt_lora_adapter.safetensors")
+            if not os.path.isfile(weights_path):
+                weights_path = os.path.join(adapter_dir, "adapter_model.safetensors")
+            from safetensors.torch import load_file
+
+            sd = load_file(weights_path)
+        else:
+            from safetensors.torch import load_file
+
+            sd = load_file(adapter_dir)
+
+        lora_a = {}
+        lora_b = {}
+        for k, v in sd.items():
+            if k.endswith(".lora_A"):
+                lora_a[k.removesuffix(".lora_A")] = v
+            elif k.endswith(".lora_a"):
+                lora_a[k.removesuffix(".lora_a")] = v
+            elif k.endswith(".lora_B"):
+                lora_b[k.removesuffix(".lora_B")] = v
+            elif k.endswith(".lora_b"):
+                lora_b[k.removesuffix(".lora_b")] = v
+        self._apply_grt_lora_pairs(lora_a, lora_b, lora_alpha=lora_alpha)
+        named_params = dict(self.named_parameters())
+        for k, v in sd.items():
+            if not k.endswith((".lora_A", ".lora_B", ".lora_a", ".lora_b")) and k in named_params:
+                target = named_params[k]
+                target.data.copy_(v.to(device=target.device, dtype=target.dtype))
 
     def compute_logits(self, hidden_states: "torch.Tensor") -> "torch.Tensor | None":
         if not isinstance(self.lm_head, ParallelLMHead):

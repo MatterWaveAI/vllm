@@ -751,6 +751,7 @@ _TRANSFORMERS_SUPPORTED_MODELS = {
     "GPTBigCodeForCausalLM": ("transformers", "TransformersForCausalLM"),
     "GPTNeoXForCausalLM": ("transformers", "TransformersForCausalLM"),
     "GRTForCausalLM": ("transformers", "TransformersForCausalLM"),
+    "GRTTTSForConditionalGeneration": ("transformers", "TransformersForCausalLM"),
     "HunYuanDenseV1ForCausalLM": ("transformers", "TransformersForCausalLM"),
     "HunYuanMoEV1ForCausalLM": ("transformers", "TransformersMoEForCausalLM"),
     "Jais2ForCausalLM": ("transformers", "TransformersForCausalLM"),
@@ -770,6 +771,18 @@ _TRANSFORMERS_SUPPORTED_MODELS = {
         "transformers",
         "TransformersMultiModalForCausalLM",
     ),
+    "GRTASRForConditionalGeneration": (
+        "transformers",
+        "TransformersMultiModalForCausalLM",
+    ),
+    "GRTOmniForConditionalGeneration": (
+        "transformers",
+        "TransformersMultiModalForCausalLM",
+    ),
+    "GRTVLForConditionalGeneration": (
+        "transformers",
+        "TransformersMultiModalForCausalLM",
+    ),
     "HunYuanVLForConditionalGeneration": (
         "transformers",
         "TransformersMultiModalForCausalLM",
@@ -777,6 +790,11 @@ _TRANSFORMERS_SUPPORTED_MODELS = {
     "VibeVoiceAsrForConditionalGeneration": (
         "transformers",
         "TransformersMultiModalForCausalLM",
+    ),
+    # Sequence classification models
+    "GRTForSequenceClassification": (
+        "transformers",
+        "TransformersForSequenceClassification",
     ),
 }
 
