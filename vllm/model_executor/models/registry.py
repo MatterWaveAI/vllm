@@ -133,6 +133,8 @@ _TEXT_GENERATION_MODELS = {
     "GraniteMoeSharedForCausalLM": ("granitemoeshared", "GraniteMoeSharedForCausalLM"),
     "GraniteMoeSWAForCausalLM": ("granitemoeshared", "GraniteMoeSharedForCausalLM"),
     "GraniteSWAForCausalLM": ("granite", "GraniteForCausalLM"),
+    "GRTForCausalLM": ("grt", "GRTForCausalLM"),
+    "GRTTTSForConditionalGeneration": ("grt", "GRTTTSForConditionalGeneration"),
     "HrmTextForCausalLM": ("hrm_text", "HrmTextForCausalLM"),
     "HYV3ForCausalLM": ("hy_v3", "HYV3ForCausalLM"),
     "HYV4ForCausalLM": ("vllm.models.hy_v4", "HYV4ForCausalLM"),
@@ -226,6 +228,8 @@ _EMBEDDING_MODELS = {
     "DeepseekV3BidirectionalModel": ("deepseek_v2", "DeepseekV3ForCausalLM"),
     "Gemma2Model": ("gemma2", "Gemma2ForCausalLM"),
     "Gemma3TextModel": ("gemma3", "Gemma3Model"),
+    "GRTEmbeddingModel": ("grt", "GRTEmbeddingModel"),
+    "GRTModel": ("grt", "GRTModel"),
     "GteModel": ("bert_with_rope", "SnowflakeGteNewModel"),
     "GteNewModel": ("bert_with_rope", "GteNewModel"),
     "JinaEmbeddingsV5Model": ("jina", "JinaEmbeddingsV5Model"),
@@ -320,6 +324,7 @@ _TOKEN_CLASSIFICATION_MODELS = {
 _SEQUENCE_CLASSIFICATION_MODELS = {
     "BertForSequenceClassification": ("bert", "BertForSequenceClassification"),
     "GPT2ForSequenceClassification": ("gpt2", "GPT2ForSequenceClassification"),
+    "GRTForSequenceClassification": ("grt", "GRTForSequenceClassification"),
     "GteNewForSequenceClassification": (
         "bert_with_rope",
         "GteNewForSequenceClassification",
@@ -448,6 +453,9 @@ _MULTIMODAL_MODELS = {
         "granite4_vision",
         "Granite4VisionForConditionalGeneration",
     ),
+    "GRTASRForConditionalGeneration": ("grt", "GRTASRForConditionalGeneration"),
+    "GRTOmniForConditionalGeneration": ("grt", "GRTOmniForConditionalGeneration"),
+    "GRTVLForConditionalGeneration": ("grt", "GRTVLForConditionalGeneration"),
     "H2OVLChatModel": ("h2ovl", "H2OVLChatModel"),
     "InternVLChatModel": ("internvl", "InternVLChatModel"),
     "InternS1ForConditionalGeneration": (
@@ -833,7 +841,17 @@ _TRANSFORMERS_BACKEND_MODELS = {
     ),
 }
 
+_POOLING_MODELS = {
+    **_EMBEDDING_MODELS,
+    **_LATE_INTERACTION_MODELS,
+    **_REWARD_MODELS,
+    **_TOKEN_CLASSIFICATION_MODELS,
+    **_SEQUENCE_CLASSIFICATION_MODELS,
+}
+
 _VLLM_MODELS = {
+    **_TRANSFORMERS_SUPPORTED_MODELS,
+    **_TRANSFORMERS_BACKEND_MODELS,
     **_TEXT_GENERATION_MODELS,
     **_EMBEDDING_MODELS,
     **_LATE_INTERACTION_MODELS,
@@ -842,8 +860,6 @@ _VLLM_MODELS = {
     **_SEQUENCE_CLASSIFICATION_MODELS,
     **_MULTIMODAL_MODELS,
     **_SPECULATIVE_DECODING_MODELS,
-    **_TRANSFORMERS_SUPPORTED_MODELS,
-    **_TRANSFORMERS_BACKEND_MODELS,
 }
 
 # This variable is used as the args for subprocess.run(). We

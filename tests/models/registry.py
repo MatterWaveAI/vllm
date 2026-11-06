@@ -330,6 +330,9 @@ _TEXT_GENERATION_EXAMPLE_MODELS = {
     "GRTForCausalLM": _HfExamplesInfo(
         "matterwaveai/grt-30m", min_transformers_version="5.21"
     ),
+    "GRTTTSForConditionalGeneration": _HfExamplesInfo(
+        "matterwaveai/grt-30m-tts", min_transformers_version="5.21"
+    ),
     "HrmTextForCausalLM": _HfExamplesInfo(
         "sapientinc/HRM-Text-1B",
     ),
@@ -615,6 +618,12 @@ _EMBEDDING_EXAMPLE_MODELS = {
     ),
     "Gemma2Model": _HfExamplesInfo("BAAI/bge-multilingual-gemma2"),
     "Gemma3TextModel": _HfExamplesInfo("google/embeddinggemma-300m"),
+    "GRTEmbeddingModel": _HfExamplesInfo(
+        "matterwaveai/grt-30m-embedding", min_transformers_version="5.21"
+    ),
+    "GRTModel": _HfExamplesInfo(
+        "matterwaveai/grt-30m-embedding", min_transformers_version="5.21"
+    ),
     "GteModel": _HfExamplesInfo(
         "Snowflake/snowflake-arctic-embed-m-v2.0", trust_remote_code=True
     ),
@@ -761,6 +770,9 @@ _SEQUENCE_CLASSIFICATION_EXAMPLE_MODELS = {
     ),
     "GPT2ForSequenceClassification": _HfExamplesInfo(
         "nie3e/sentiment-polish-gpt2-small"
+    ),
+    "GRTForSequenceClassification": _HfExamplesInfo(
+        "matterwaveai/grt-30m-reranker", min_transformers_version="5.21"
     ),
     "GteNewForSequenceClassification": _HfExamplesInfo(
         "Alibaba-NLP/gte-multilingual-reranker-base",
@@ -939,6 +951,15 @@ _MULTIMODAL_EXAMPLE_MODELS = {
     ),
     "GraniteSpeechPlusForConditionalGeneration": _HfExamplesInfo(
         "ibm-granite/granite-speech-4.1-2b-plus",
+    ),
+    "GRTASRForConditionalGeneration": _HfExamplesInfo(
+        "matterwaveai/grt-30m-asr", min_transformers_version="5.21"
+    ),
+    "GRTOmniForConditionalGeneration": _HfExamplesInfo(
+        "matterwaveai/grt-30m-omni", min_transformers_version="5.21"
+    ),
+    "GRTVLForConditionalGeneration": _HfExamplesInfo(
+        "matterwaveai/grt-30m-vl", min_transformers_version="5.21"
     ),
     "GLM4VForCausalLM": _HfExamplesInfo(
         "zai-org/glm-4v-9b",

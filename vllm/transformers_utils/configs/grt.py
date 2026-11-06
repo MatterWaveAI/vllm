@@ -37,10 +37,17 @@ except ImportError:
             n_mixer_rotations: int = 1,
             pos_freq_base: float = 10000.0,
             learnable_rope: bool = True,
+            rope_placement: str = "stream",
             learnable_residual_gates: bool = True,
             residual_gate_mode: str = "bounded_depth",
             residual_norm_mode: str = "none",
             peri_ln: bool = False,
+            ffn_n_experts: int = 0,
+            mor_mode: str = "direct",
+            mor_delta_scale: float = 0.5,
+            mor_router_mode: str = "rotational",
+            mor_split_routers: bool = False,
+            mor_top_k: int | None = None,
             tie_word_embeddings: bool = True,
             pad_token_id: int | None = 151643,
             bos_token_id: int | None = 151643,
@@ -58,10 +65,17 @@ except ImportError:
             self.n_mixer_rotations = n_mixer_rotations
             self.pos_freq_base = pos_freq_base
             self.learnable_rope = learnable_rope
+            self.rope_placement = rope_placement
             self.learnable_residual_gates = learnable_residual_gates
             self.residual_gate_mode = residual_gate_mode
             self.residual_norm_mode = residual_norm_mode
             self.peri_ln = peri_ln
+            self.ffn_n_experts = ffn_n_experts
+            self.mor_mode = mor_mode
+            self.mor_delta_scale = mor_delta_scale
+            self.mor_router_mode = mor_router_mode
+            self.mor_split_routers = mor_split_routers
+            self.mor_top_k = mor_top_k
 
             kwargs.update(
                 tie_word_embeddings=tie_word_embeddings,
@@ -509,6 +523,8 @@ def load_grt_lora_adapter(
         wrap_mod_2pi=wrap_mod_2pi,
     )
     model_or_state_dict.load_state_dict(merged, strict=False)
+    if hasattr(model_or_state_dict, "process_weights_after_loading"):
+        model_or_state_dict.process_weights_after_loading()
     return model_or_state_dict
 
 
